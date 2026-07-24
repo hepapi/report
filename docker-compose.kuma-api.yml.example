@@ -1,0 +1,41 @@
+# Mevcut Uptime Kuma docker-compose dosyanıza EKLENECEK sidecar servis
+# örneği. Kendi compose dosyanızdaki uptime-kuma servisinin volume adını/
+# yolunu ve network'ünü buna göre uyarlayın — burada "uptime-kuma" servis
+# adı ve "uptime-kuma-data" volume adı varsayım olarak kullanıldı.
+#
+# Kurulum:
+#   1. Bu dosyadaki "kuma-db-api" servisini kendi docker-compose.yml'inize
+#      ekleyin (veya bu dosyayı -f ile ek dosya olarak verin).
+#   2. KUMA_API_KEY'i güçlü, rastgele bir değerle değiştirin.
+#   3. docker compose up -d --build kuma-db-api
+#
+# Rapor makinesinden (bu depo, Mac) erişim — container'ın 8090 portunu
+# doğrudan internete/LAN'a açmak yerine SSH tüneli önerilir:
+#   ssh -N -L 8090:localhost:8090 kullanici@uzak-sunucu
+#   python3 kuma_ui.py --api-url http://localhost:8090 --api-key <KUMA_API_KEY>
+#
+# (Tunnel yerine dogrudan erisim istiyorsaniz "ports" bolumunu acip
+#  sunucu guvenlik duvarinda sadece rapor makinesinin IP'sine izin verin.)
+
+services:
+  kuma-db-api:
+    build:
+      context: .
+      dockerfile: kuma_api_server.Dockerfile
+    container_name: kuma-db-api
+    restart: unless-stopped
+    environment:
+      KUMA_DB_PATH: /app/data/kuma.db
+      KUMA_API_KEY: "CHANGE_ME_TO_A_LONG_RANDOM_SECRET"
+    volumes:
+      # uptime-kuma servisinin kullandigi AYNI volume, salt-okunur (:ro)
+      - uptime-kuma-data:/app/data:ro
+    # Sadece sunucu icinden (SSH tuneli ile) erisim yeterliyse "ports"u
+    # hic acmayin; docker network uzerinden container-to-container
+    # erisim zaten calisir. Disaridan da erismek isterseniz:
+    ports:
+      - "127.0.0.1:8090:8090"   # sadece localhost'a bind — SSH tuneli icin sart
+
+volumes:
+  uptime-kuma-data:
+    external: true   # uptime-kuma servisinizin gercek volume adiyla degistirin
