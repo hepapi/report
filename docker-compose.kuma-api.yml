@@ -1,0 +1,78 @@
+# Sizin sunucunuza ozel, hazir kuma-db-api + kuma-ui compose dosyasi.
+#
+# Tespit edilen ortam:
+#   - uptime-kuma container: uptime_uptime-kuma_1
+#   - veri klasoru (bind mount): /root/uptime/data  ->  /app/data
+#   - docker network: uptime_default (harici / mevcut)
+#
+# Mimari:
+#   kuma-db-api  -> sadece docker network icinde erisilebilir (disariya
+#                   hic port acmaz), kuma.db'yi salt-okunur okur.
+#   kuma-ui      -> tarayicidan PDF rapor almak icin web arayuzu, ayni
+#                   network uzerinden kuma-db-api'a baglanir, sunucunun
+#                   tum IP'lerinden (0.0.0.0) 5000 portunda erisilebilir.
+#
+# UYARI: kuma-ui'da giris/parola YOK. 5000 portuna ulasabilen herkes
+# uptime verilerinizden PDF rapor uretebilir. Sunucu guvenlik duvarinizda
+# 5000 portunu sadece guvendiginiz IP'lere / VPN'e acin, ya da onune
+# basic-auth yapan bir reverse proxy (nginx/caddy) koyun.
+#
+# Kurulum (sunucuda, bu depodaki dosyalari kopyaladiktan sonra):
+#   scp kuma_api_server.py kuma_dbaccess.py kuma_report.py kuma_ui.py \
+#       kuma_api_server.Dockerfile kuma_ui.Dockerfile \
+#       requirements-api.txt requirements-ui.txt \
+#       docker-compose.kuma-api.yml \
+#       root@Uptime:~/report/
+#
+#   ssh root@Uptime
+#   cd ~/report
+#   # KUMA_API_KEY'i asagida guclu, rastgele bir degerle degistirin
+#   # (uretmek icin: openssl rand -hex 32)
+#   docker compose -f docker-compose.kuma-api.yml up -d --build
+#
+# Test:
+#   curl -s http://localhost:8090/health          # sunucu icinden, API
+#   http://<sunucu-ip>:5000                        # tarayicidan, UI
+
+version: "3.8"
+
+services:
+  kuma-db-api:
+    build:
+      context: .
+      dockerfile: kuma_api_server.Dockerfile
+    container_name: kuma-db-api
+    restart: unless-stopped
+    environment:
+      KUMA_DB_PATH: /app/data/kuma.db
+      KUMA_API_KEY: &api_key "CHANGE_ME_TO_A_LONG_RANDOM_SECRET"
+    volumes:
+      # uptime-kuma'nin kullandigi AYNI klasor, salt-okunur
+      - /root/uptime/data:/app/data:ro
+    networks:
+      - uptime_default
+    # Disariya port acilmiyor: kuma-ui buna docker network uzerinden
+    # (http://kuma-db-api:8090) erisiyor. Sunucu icinden hata ayiklamak
+    # icin gerekirse asagidaki satiri acabilirsiniz:
+    # ports:
+    #   - "127.0.0.1:8090:8090"
+
+  kuma-ui:
+    build:
+      context: .
+      dockerfile: kuma_ui.Dockerfile
+    container_name: kuma-ui
+    restart: unless-stopped
+    depends_on:
+      - kuma-db-api
+    environment:
+      KUMA_API_URL: http://kuma-db-api:8090
+      KUMA_API_KEY: *api_key
+    networks:
+      - uptime_default
+    ports:
+      - "0.0.0.0:5000:5000"
+
+networks:
+  uptime_default:
+    external: true

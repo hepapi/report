@@ -803,15 +803,18 @@ def generate():
 def main():
     p = argparse.ArgumentParser(description='Uptime Kuma PDF rapor web UI')
     p.add_argument('--db', help='SQLite DB dosyasi (lokal mod)')
-    p.add_argument('--api-url',
+    p.add_argument('--api-url', default=os.environ.get('KUMA_API_URL'),
                    help='kuma_api_server.py adresi, orn. http://uptime-host:8090 '
-                        '(--db yerine; uzak sunucudaki canli DB\'ye HTTP ile baglanir)')
-    p.add_argument('--api-key', help='--api-url ile kullanilacak API anahtari '
-                                      '(KUMA_API_KEY ortam degiskeni ile ayni)')
-    p.add_argument('--host', default='127.0.0.1',
+                        '(--db yerine; uzak sunucudaki canli DB\'ye HTTP ile baglanir. '
+                        'KUMA_API_URL ortam degiskeninden de okunur — container icinde '
+                        'kullanisli.)')
+    p.add_argument('--api-key', default=os.environ.get('KUMA_API_KEY'),
+                   help='--api-url ile kullanilacak API anahtari '
+                        '(KUMA_API_KEY ortam degiskeni ile ayni)')
+    p.add_argument('--host', default=os.environ.get('KUMA_UI_HOST', '127.0.0.1'),
                    help='Sadece localhost icin 127.0.0.1 (varsayilan), '
-                        'LAN icin 0.0.0.0')
-    p.add_argument('--port', type=int, default=5000)
+                        'tum arayuzlerden (LAN/internet) erisim icin 0.0.0.0')
+    p.add_argument('--port', type=int, default=int(os.environ.get('KUMA_UI_PORT', '5000')))
     p.add_argument('--debug', action='store_true')
     args = p.parse_args()
 
@@ -826,7 +829,7 @@ def main():
             print(f'✗ Hata: {DB_PATH} bulunamadi')
             sys.exit(1)
     API_URL = args.api_url
-    API_KEY = args.api_key or os.environ.get('KUMA_API_KEY')
+    API_KEY = args.api_key
 
     print(f'→ Kaynak: {DB_PATH or API_URL}')
     print(f'→ Tarayicidan ac: http://{args.host}:{args.port}')
