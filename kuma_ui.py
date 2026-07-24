@@ -41,6 +41,8 @@ app = Flask(__name__)
 DB_PATH = None
 API_URL = None
 API_KEY = None
+LETTERHEAD_PATH = None
+MARGINS = {'top': 1.5, 'bottom': 1.5, 'left': 1.5, 'right': 1.5}
 
 
 def get_backend():
@@ -456,6 +458,18 @@ HTML = r"""<!DOCTYPE html>
             <div class="switch-desc">Varsayilan olarak alt monitoru olan monitorler cikarilir - dahil edilirse ayni DOWN olaylari iki kez sayilir.</div>
           </div>
         </div>
+        {% if has_letterhead %}
+        <div class="switch-row">
+          <label class="switch">
+            <input type="checkbox" name="use_letterhead" id="use_letterhead" checked>
+            <span class="switch-track" aria-hidden="true"></span>
+          </label>
+          <div class="switch-copy">
+            <div class="switch-title">Antetli kagit kullan</div>
+            <div class="switch-desc">Rapor, sunucuya tanimli antetli kagidin uzerine basilir.</div>
+          </div>
+        </div>
+        {% endif %}
       </div>
     </section>
 
@@ -618,12 +632,14 @@ form.addEventListener('submit', async (e) => {
   statusEl.className = 'status';
   statusEl.textContent = '';
 
+  const letterheadEl = document.getElementById('use_letterhead');
   const body = {
     ...getFilterData(),
     from: document.getElementById('from').value,
     to: document.getElementById('to').value,
     detailed: document.getElementById('detailed').checked,
     title: document.getElementById('title').value.trim(),
+    use_letterhead: letterheadEl ? letterheadEl.checked : false,
   };
 
   try {
@@ -708,6 +724,7 @@ def index():
         tags=tags,
         parents=parents,
         all_monitors=all_monitors,
+        has_letterhead=bool(LETTERHEAD_PATH),
     )
 
 
@@ -819,12 +836,17 @@ def generate():
         # Dosya adini basliktan uret
         fname = f'{_slugify(title)}_{date_from}_{date_to}.pdf'
 
+        use_letterhead = bool(LETTERHEAD_PATH) and bool(data.get('use_letterhead', True))
+
         # PDF'i memory'de olustur
         buf = io.BytesIO()
         build_report(
             backend, monitors, date_from, date_to, buf,
             report_title=title,
             detailed=bool(data.get('detailed', False)),
+            letterhead_path=LETTERHEAD_PATH if use_letterhead else None,
+            margin_top_cm=MARGINS['top'], margin_bottom_cm=MARGINS['bottom'],
+            margin_left_cm=MARGINS['left'], margin_right_cm=MARGINS['right'],
         )
         buf.seek(0)
         return send_file(
@@ -857,13 +879,28 @@ def main():
                         'tum arayuzlerden (LAN/internet) erisim icin 0.0.0.0')
     p.add_argument('--port', type=int, default=int(os.environ.get('KUMA_UI_PORT', '5000')))
     p.add_argument('--debug', action='store_true')
+    p.add_argument('--letterhead', default=os.environ.get('KUMA_LETTERHEAD_PATH'),
+                   help='Antetli kagit PDF dosyasi. Verilirse UI\'da "antetli kagit '
+                        'kullan" secenegi cikar ve varsayilan olarak acik gelir. '
+                        'KUMA_LETTERHEAD_PATH ortam degiskeninden de okunur.')
+    p.add_argument('--margin-top', type=float,
+                   default=float(os.environ.get('KUMA_MARGIN_TOP', '1.5')))
+    p.add_argument('--margin-bottom', type=float,
+                   default=float(os.environ.get('KUMA_MARGIN_BOTTOM', '1.5')))
+    p.add_argument('--margin-left', type=float,
+                   default=float(os.environ.get('KUMA_MARGIN_LEFT', '1.5')))
+    p.add_argument('--margin-right', type=float,
+                   default=float(os.environ.get('KUMA_MARGIN_RIGHT', '1.5')))
     args = p.parse_args()
 
     if not args.db and not args.api_url:
         print('✗ Hata: --db veya --api-url belirtilmeli')
         sys.exit(1)
+    if args.letterhead and not Path(args.letterhead).exists():
+        print(f'✗ Hata: antetli kagit dosyasi bulunamadi: {args.letterhead}')
+        sys.exit(1)
 
-    global DB_PATH, API_URL, API_KEY
+    global DB_PATH, API_URL, API_KEY, LETTERHEAD_PATH, MARGINS
     if args.db:
         DB_PATH = str(Path(args.db).resolve())
         if not Path(DB_PATH).exists():
@@ -871,8 +908,16 @@ def main():
             sys.exit(1)
     API_URL = args.api_url
     API_KEY = args.api_key
+    LETTERHEAD_PATH = args.letterhead
+    MARGINS = {
+        'top': args.margin_top, 'bottom': args.margin_bottom,
+        'left': args.margin_left, 'right': args.margin_right,
+    }
 
     print(f'→ Kaynak: {DB_PATH or API_URL}')
+    if LETTERHEAD_PATH:
+        print(f'→ Antetli kagit: {LETTERHEAD_PATH} '
+              f'(kenar bosluklari: {MARGINS})')
     print(f'→ Tarayicidan ac: http://{args.host}:{args.port}')
     print('  (Durdurmak icin Ctrl+C)')
     app.run(host=args.host, port=args.port, debug=args.debug)

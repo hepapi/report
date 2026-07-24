@@ -21,7 +21,7 @@
 #   scp kuma_api_server.py kuma_dbaccess.py kuma_report.py kuma_ui.py \
 #       kuma_api_server.Dockerfile kuma_ui.Dockerfile \
 #       requirements-api.txt requirements-ui.txt \
-#       docker-compose.kuma-api.yml \
+#       docker-compose.kuma-api.yml pegasus.pdf \
 #       root@Uptime:~/report/
 #
 #   ssh root@Uptime
@@ -45,7 +45,7 @@ services:
     restart: unless-stopped
     environment:
       KUMA_DB_PATH: /app/data/kuma.db
-      KUMA_API_KEY: &api_key "CHANGE_ME_TO_A_LONG_RANDOM_SECRET"
+      KUMA_API_KEY: &api_key "Pegasus2026!"
     volumes:
       # uptime-kuma'nin kullandigi AYNI klasor, salt-okunur
       - /root/uptime/data:/app/data:ro
@@ -68,10 +68,16 @@ services:
     environment:
       KUMA_API_URL: http://kuma-db-api:8090
       KUMA_API_KEY: *api_key
+      # pegasus.pdf bir "watermark" tipi antet (sayfa ortasinda soluk logo,
+      # ustbilgi/altbilgi bandi yok) - varsayilan 1.5cm kenar bosluklari
+      # yeterli, ayrica margin override gerekmiyor.
+      KUMA_LETTERHEAD_PATH: /app/letterhead.pdf
     networks:
       - uptime_default
     ports:
       - "0.0.0.0:5000:5000"
+    volumes:
+      - ./pegasus.pdf:/app/letterhead.pdf:ro
 
 networks:
   uptime_default:

@@ -46,6 +46,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (
     Image, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
 )
+from pypdf import PdfReader, PdfWriter
 
 from kuma_dbaccess import RemoteBackendError, make_backend
 
@@ -128,9 +129,51 @@ def render_response_chart(times, pings, monitor_name):
 
 # ==================== PDF ====================
 
+def _apply_letterhead(content_bytes, letterhead_path):
+    """Rapor sayfalarini antetli kagidin uzerine bindirir.
+
+    Antetli kagit 1 sayfaysa tum rapor sayfalarinda tekrar kullanilir.
+    2 (ya da daha fazla) sayfaysa: ilk sayfa kapak icin, ikinci sayfa
+    devam sayfalari icin kullanilir.
+    """
+    content_reader = PdfReader(BytesIO(content_bytes))
+    n_letterhead_pages = len(PdfReader(letterhead_path).pages)
+
+    writer = PdfWriter()
+    for i, content_page in enumerate(content_reader.pages):
+        # Her sayfa icin antetli kagidin TAZE bir kopyasini parse ediyoruz.
+        # pypdf'te ayni PageObject'i birden fazla add_page()+merge_page()
+        # cagrisinda paylasmak, ic content stream'in sayfalar arasinda
+        # (mutasyonla) sizmasina yol aciyordu - her sayfa kendi bagimsiz
+        # kopyasini almali.
+        lh_idx = 0 if (n_letterhead_pages == 1 or i == 0) else 1
+        lh_page = PdfReader(letterhead_path).pages[lh_idx]
+        writer.add_page(lh_page)
+        writer.pages[-1].merge_page(content_page)
+
+    out = BytesIO()
+    writer.write(out)
+    return out.getvalue()
+
+
+def _finalize_pdf(raw_buf, output_path, letterhead_path):
+    """doc.build() ciktisini (gerekirse antetli kagitla birlestirip) hedefe yazar."""
+    raw_buf.seek(0)
+    data = raw_buf.getvalue()
+    if letterhead_path:
+        data = _apply_letterhead(data, letterhead_path)
+
+    if isinstance(output_path, (str, Path)):
+        Path(output_path).write_bytes(data)
+    else:
+        output_path.write(data)
+
+
 def build_report(backend, monitors, date_from, date_to, output_path,
                  report_title='Uptime Kuma Rapor', max_down_events=200,
-                 detailed=False):
+                 detailed=False, letterhead_path=None,
+                 margin_top_cm=1.5, margin_bottom_cm=1.5,
+                 margin_left_cm=1.5, margin_right_cm=1.5):
     if not monitors:
         print("⚠  Filtreye uyan monitor yok.")
         return
@@ -140,10 +183,11 @@ def build_report(backend, monitors, date_from, date_to, output_path,
     # PDF-safe title
     safe_title = ascii_safe(report_title)
 
+    raw_buf = BytesIO()
     doc = SimpleDocTemplate(
-        output_path, pagesize=A4,
-        leftMargin=1.5 * cm, rightMargin=1.5 * cm,
-        topMargin=1.5 * cm, bottomMargin=1.5 * cm,
+        raw_buf, pagesize=A4,
+        leftMargin=margin_left_cm * cm, rightMargin=margin_right_cm * cm,
+        topMargin=margin_top_cm * cm, bottomMargin=margin_bottom_cm * cm,
         title=safe_title,
     )
     styles = getSampleStyleSheet()
@@ -225,6 +269,7 @@ def build_report(backend, monitors, date_from, date_to, output_path,
     # --- Detayli mod degilse burada bit ---
     if not detailed:
         doc.build(story)
+        _finalize_pdf(raw_buf, output_path, letterhead_path)
         print(f'✓ Ozet rapor oluşturuldu: {output_path}')
         print(f'  (Her monitor icin ayri sayfa istersen --detailed ekle)')
         return
@@ -325,6 +370,7 @@ def build_report(backend, monitors, date_from, date_to, output_path,
             story.append(P('<b>Bu donemde down olayi yok.</b>'))
 
     doc.build(story)
+    _finalize_pdf(raw_buf, output_path, letterhead_path)
     print(f'✓ Detayli rapor oluşturuldu: {output_path}')
 
 
@@ -361,6 +407,19 @@ def parse_args():
                    help='Group tipi (alt monitoru olan) monitorlari da dahil et '
                         '(varsayilan: cikarilir, cunku ayni DOWN olaylarini iki '
                         'kez sayarak aggregate istatistikleri bozuyor)')
+    p.add_argument('--letterhead',
+                   help='Antetli kagit PDF dosyasi. Verilirse rapor sayfalari '
+                        'bunun uzerine bindirilir. Tek sayfaysa tum sayfalarda, '
+                        'iki (+) sayfaysa ilk sayfa kapak / ikincisi devam '
+                        'sayfalari icin kullanilir.')
+    p.add_argument('--margin-top', type=float, default=1.5,
+                   help='Ust kenar bosluğu (cm). Antetli kagitta ustte logo/baslik '
+                        'alani varsa buyutun (orn. 4.5).')
+    p.add_argument('--margin-bottom', type=float, default=1.5,
+                   help='Alt kenar bosluğu (cm). Antetli kagitta altta altbilgi '
+                        'alani varsa buyutun (orn. 2.5).')
+    p.add_argument('--margin-left', type=float, default=1.5, help='Sol kenar bosluğu (cm)')
+    p.add_argument('--margin-right', type=float, default=1.5, help='Sag kenar bosluğu (cm)')
     return p.parse_args()
 
 
@@ -437,7 +496,9 @@ def main():
     build_report(
         backend, monitors, args.date_from, args.date_to, args.output,
         report_title=title, max_down_events=args.max_down,
-        detailed=args.detailed,
+        detailed=args.detailed, letterhead_path=args.letterhead,
+        margin_top_cm=args.margin_top, margin_bottom_cm=args.margin_bottom,
+        margin_left_cm=args.margin_left, margin_right_cm=args.margin_right,
     )
     backend.close()
 
