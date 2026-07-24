@@ -53,394 +53,430 @@ HTML = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Uptime Kuma Rapor</title>
+<title>Pegasus · Uptime Rapor Konsolu</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
 <style>
+  /* ---- tokens: light (default) ---- */
   :root {
-    --bg: #FAFAFA;
+    --bg: #FBF9F4;
+    --panel: #F3EEE1;
     --card: #FFFFFF;
-    --border: #E5E7EB;
-    --border-strong: #D1D5DB;
-    --text: #111827;
-    --text-muted: #6B7280;
-    --primary: #1976D2;
-    --primary-hover: #1565C0;
-    --primary-soft: #E3F2FD;
-    --success: #2E7D32;
-    --warning: #F57C00;
-    --danger: #C62828;
-    --shadow: 0 1px 2px rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.06);
+    --border: #E7E0CE;
+    --border-strong: #D6CCB0;
+    --text: #1B1D22;
+    --text-muted: #6B6E76;
+    --accent: #FFC933;
+    --accent-hover: #F0B900;
+    --accent-ink: #2E2400;
+    --good: #1E9D57;
+    --warn: #E07A12;
+    --critical: #D8402B;
+    --shadow: 0 1px 2px rgba(20,16,4,.05), 0 6px 20px -4px rgba(20,16,4,.10);
+    --focus-ring: 0 0 0 3px rgba(255,201,51,.45);
+    --font-display: 'Sora', ui-sans-serif, system-ui, sans-serif;
+    --font-body: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+    --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
   }
+  /* ---- tokens: dark, OS preference ---- */
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161B;
+      --panel: #1B1E24;
+      --card: #20232B;
+      --border: #2B2F38;
+      --border-strong: #3A3F4A;
+      --text: #F1F0EA;
+      --text-muted: #9BA0AA;
+      --accent: #FFC933;
+      --accent-hover: #FFD65C;
+      --accent-ink: #241C00;
+      --good: #3FCB80;
+      --warn: #FF9A3D;
+      --critical: #FF6B5E;
+      --shadow: 0 1px 2px rgba(0,0,0,.35), 0 10px 28px -8px rgba(0,0,0,.55);
+      --focus-ring: 0 0 0 3px rgba(255,201,51,.35);
+    }
+  }
+  /* ---- tokens: explicit toggle overrides (win over the query above) ---- */
+  :root[data-theme="dark"] {
+    --bg: #14161B; --panel: #1B1E24; --card: #20232B;
+    --border: #2B2F38; --border-strong: #3A3F4A;
+    --text: #F1F0EA; --text-muted: #9BA0AA;
+    --accent: #FFC933; --accent-hover: #FFD65C; --accent-ink: #241C00;
+    --good: #3FCB80; --warn: #FF9A3D; --critical: #FF6B5E;
+    --shadow: 0 1px 2px rgba(0,0,0,.35), 0 10px 28px -8px rgba(0,0,0,.55);
+    --focus-ring: 0 0 0 3px rgba(255,201,51,.35);
+  }
+  :root[data-theme="light"] {
+    --bg: #FBF9F4; --panel: #F3EEE1; --card: #FFFFFF;
+    --border: #E7E0CE; --border-strong: #D6CCB0;
+    --text: #1B1D22; --text-muted: #6B6E76;
+    --accent: #FFC933; --accent-hover: #F0B900; --accent-ink: #2E2400;
+    --good: #1E9D57; --warn: #E07A12; --critical: #D8402B;
+    --shadow: 0 1px 2px rgba(20,16,4,.05), 0 6px 20px -4px rgba(20,16,4,.10);
+    --focus-ring: 0 0 0 3px rgba(255,201,51,.45);
+  }
+
   * { box-sizing: border-box; }
+  html, body { height: 100%; }
   body {
     margin: 0;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-                 Oxygen, Ubuntu, sans-serif;
+    font-family: var(--font-body);
     background: var(--bg);
     color: var(--text);
     line-height: 1.5;
+    font-size: 14px;
     -webkit-font-smoothing: antialiased;
   }
-  .container {
-    max-width: 640px;
-    margin: 0 auto;
-    padding: 32px 20px 80px;
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
   }
-  header {
-    margin-bottom: 24px;
+
+  .shell { max-width: 1080px; margin: 0 auto; padding: 28px 20px 96px; }
+
+  /* ---- top bar / brand ---- */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; flex-wrap: wrap; margin-bottom: 28px;
   }
-  h1 {
-    font-size: 24px;
-    font-weight: 700;
-    margin: 0 0 4px;
-    letter-spacing: -0.02em;
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand-mark {
+    width: 38px; height: 38px; flex: none; border-radius: 10px;
+    background: #1B1D22; color: var(--accent);
+    display: flex; align-items: center; justify-content: center;
   }
-  header p {
-    margin: 0;
-    color: var(--text-muted);
-    font-size: 14px;
+  .brand-text { display: flex; flex-direction: column; line-height: 1.25; }
+  .brand-eyebrow {
+    font-family: var(--font-body); font-size: 11px; font-weight: 600;
+    letter-spacing: .12em; text-transform: uppercase; color: var(--text-muted);
   }
-  header code {
-    font-family: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
-    background: var(--primary-soft);
-    color: var(--primary);
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-size: 12px;
+  .brand-title {
+    font-family: var(--font-display); font-size: 19px; font-weight: 700;
+    letter-spacing: -0.01em; text-wrap: balance;
   }
-  .card {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 20px;
-    margin-bottom: 16px;
-    box-shadow: var(--shadow);
+  .source-pill {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 999px; padding: 7px 14px; box-shadow: var(--shadow);
+    font-size: 12.5px; color: var(--text-muted); flex-wrap: wrap;
   }
-  .card-label {
-    font-size: 12px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-muted);
-    margin-bottom: 12px;
+  .source-pill .dot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--good);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--good) 20%, transparent);
+    flex: none;
   }
-  .filter-tabs {
-    display: grid;
-    grid-template-columns: repeat(5, 1fr);
-    gap: 4px;
-    background: var(--bg);
-    padding: 4px;
-    border-radius: 8px;
-    margin-bottom: 16px;
+  .source-pill code {
+    font-family: var(--font-mono); color: var(--text); font-size: 12px;
+    max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  .filter-tabs button {
-    background: transparent;
-    border: none;
-    padding: 8px 4px;
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--text-muted);
-    cursor: pointer;
-    border-radius: 6px;
-    transition: all 0.15s;
-    font-family: inherit;
+  .source-pill strong { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  /* ---- console layout: rail + action pane ---- */
+  .console { display: grid; grid-template-columns: 340px 1fr; gap: 20px; align-items: start; }
+  @media (max-width: 880px) { .console { grid-template-columns: 1fr; } }
+
+  .panel {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 18px; box-shadow: var(--shadow);
   }
-  .filter-tabs button:hover { color: var(--text); }
-  .filter-tabs button.active {
-    background: var(--card);
-    color: var(--primary);
-    box-shadow: var(--shadow);
+  .rail { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  .action { display: flex; flex-direction: column; gap: 16px; position: sticky; top: 20px; min-width: 0; }
+
+  .panel-title {
+    display: flex; align-items: center; gap: 8px;
+    font-family: var(--font-body); font-size: 12px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted);
+    margin: 0 0 14px;
   }
+  .panel-title svg { width: 15px; height: 15px; flex: none; color: var(--text-muted); }
+
+  /* ---- segmented filter-type control ---- */
+  .segmented {
+    display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px;
+    background: var(--panel); border: 1px solid var(--border);
+    padding: 3px; border-radius: 9px; margin-bottom: 16px;
+  }
+  .segmented button {
+    min-width: 0;
+    background: transparent; border: none; padding: 8px 4px;
+    font-family: var(--font-body); font-size: 12.5px; font-weight: 500;
+    color: var(--text-muted); cursor: pointer; border-radius: 6px;
+    transition: background .15s, color .15s; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .segmented button:hover { color: var(--text); }
+  .segmented button.active {
+    background: var(--accent); color: var(--accent-ink); font-weight: 600;
+  }
+
   .filter-input { display: none; }
   .filter-input.active { display: block; }
-  label {
-    display: block;
-    font-size: 13px;
-    font-weight: 500;
-    margin-bottom: 6px;
+
+  label { display: block; font-size: 12.5px; font-weight: 500; margin-bottom: 6px; }
+  .label-hint { color: var(--text-muted); font-weight: 400; }
+
+  select, input[type="text"], input[type="date"] {
+    width: 100%; padding: 9px 11px; border: 1px solid var(--border-strong);
+    border-radius: 8px; font-size: 13.5px; font-family: var(--font-body);
+    background: var(--bg); color: var(--text);
+    transition: border-color .15s, box-shadow .15s;
   }
-  select, input[type="text"], input[type="date"], input[type="number"] {
-    width: 100%;
-    padding: 10px 12px;
-    border: 1px solid var(--border-strong);
-    border-radius: 6px;
-    font-size: 14px;
-    font-family: inherit;
-    background: var(--card);
-    color: var(--text);
-    transition: border-color 0.15s, box-shadow 0.15s;
+  select:focus-visible, input:focus-visible {
+    outline: none; border-color: var(--accent-hover); box-shadow: var(--focus-ring);
   }
-  select:focus, input:focus {
-    outline: none;
-    border-color: var(--primary);
-    box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.1);
-  }
-  .hint {
-    font-size: 12px;
-    color: var(--text-muted);
-    margin-top: 6px;
-  }
-  .date-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-  }
-  .presets {
-    display: flex;
-    gap: 6px;
-    margin-top: 10px;
-    flex-wrap: wrap;
-  }
+  .hint { font-size: 11.5px; color: var(--text-muted); margin-top: 6px; line-height: 1.5; }
+
+  .monitor-select { min-height: 160px; padding: 4px; }
+  select[multiple] option { padding: 6px 8px; border-radius: 5px; font-size: 13px; }
+
+  /* ---- date range ---- */
+  .date-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .date-row > div { min-width: 0; }
+  input[type="date"] { min-width: 0; }
+  .presets { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
   .presets button {
-    background: var(--bg);
-    border: 1px solid var(--border);
-    padding: 6px 12px;
-    border-radius: 6px;
-    font-size: 12px;
-    cursor: pointer;
-    color: var(--text-muted);
-    font-family: inherit;
+    background: var(--panel); border: 1px solid var(--border);
+    padding: 6px 11px; border-radius: 999px; font-size: 11.5px;
+    font-family: var(--font-body); cursor: pointer; color: var(--text-muted);
+    transition: border-color .15s, color .15s;
   }
-  .presets button:hover {
-    background: var(--primary-soft);
-    color: var(--primary);
-    border-color: var(--primary);
+  .presets button:hover { color: var(--text); border-color: var(--border-strong); }
+
+  /* ---- switches (replace old checkbox+description block) ---- */
+  .switch-row {
+    display: flex; align-items: flex-start; gap: 12px;
+    padding: 12px 0; border-top: 1px solid var(--border);
   }
-  .toggle {
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    padding: 12px;
-    background: var(--bg);
-    border-radius: 8px;
-    cursor: pointer;
-    border: 1px solid var(--border);
-    transition: all 0.15s;
+  .switch-row:first-of-type { border-top: none; padding-top: 4px; }
+  .switch-copy { flex: 1; min-width: 0; }
+  .switch-title { font-size: 13.5px; font-weight: 500; }
+  .switch-desc { font-size: 11.5px; color: var(--text-muted); margin-top: 3px; line-height: 1.5; }
+  .switch {
+    position: relative; flex: none; width: 38px; height: 22px; margin-top: 1px;
   }
-  .toggle:hover { border-color: var(--border-strong); }
-  .toggle input {
-    margin: 3px 0 0;
-    accent-color: var(--primary);
-    cursor: pointer;
+  .switch input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+  .switch-track {
+    position: absolute; inset: 0; border-radius: 999px;
+    background: var(--border-strong); transition: background .15s;
   }
-  .toggle-content { flex: 1; }
-  .toggle-title { font-weight: 500; font-size: 14px; }
-  .toggle-desc { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
-  .preview {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 14px 16px;
-    background: var(--primary-soft);
-    border-radius: 8px;
-    margin-bottom: 16px;
+  .switch-track::after {
+    content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px;
+    border-radius: 50%; background: var(--card); box-shadow: 0 1px 2px rgba(0,0,0,.25);
+    transition: transform .15s;
   }
-  .preview-num {
-    font-size: 22px;
-    font-weight: 700;
-    color: var(--primary);
-    font-variant-numeric: tabular-nums;
+  .switch input:checked ~ .switch-track { background: var(--accent); }
+  .switch input:checked ~ .switch-track::after { transform: translateX(16px); }
+  .switch input:focus-visible ~ .switch-track { box-shadow: var(--focus-ring); }
+
+  /* ---- action pane: stat readout ---- */
+  .stat-panel { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .stat-label {
+    display: block; font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .08em; color: var(--text-muted); margin-bottom: 6px;
   }
-  .preview-label {
-    font-size: 12px;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    font-weight: 600;
+  .stat-value {
+    font-family: var(--font-mono); font-size: 30px; font-weight: 600;
+    font-variant-numeric: tabular-nums; letter-spacing: -0.01em;
   }
-  .preview-right { text-align: right; }
-  .preview-note { font-size: 12px; color: var(--text-muted); }
+  .stat-unit { font-size: 13px; color: var(--text-muted); margin-left: 4px; }
+  .stat-note { font-size: 12px; color: var(--text-muted); text-align: right; }
+  .stat-note.is-empty { color: var(--critical); }
+
   .btn-primary {
-    width: 100%;
-    background: var(--primary);
-    color: white;
-    border: none;
-    padding: 14px;
-    font-size: 15px;
-    font-weight: 600;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: background 0.15s, transform 0.05s;
-    font-family: inherit;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
+    width: 100%; background: var(--accent); color: var(--accent-ink);
+    border: none; padding: 14px; font-size: 14.5px; font-weight: 600;
+    border-radius: 10px; cursor: pointer; font-family: var(--font-body);
+    transition: background .15s, transform .05s;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
   }
-  .btn-primary:hover { background: var(--primary-hover); }
+  .btn-primary svg { width: 16px; height: 16px; }
+  .btn-primary:hover { background: var(--accent-hover); }
   .btn-primary:active { transform: translateY(1px); }
-  .btn-primary:disabled {
-    background: var(--border-strong);
-    cursor: not-allowed;
-    transform: none;
-  }
+  .btn-primary:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+  .btn-primary:disabled { background: var(--border-strong); color: var(--text-muted); cursor: not-allowed; transform: none; }
+
   .spinner {
-    width: 16px;
-    height: 16px;
-    border: 2px solid rgba(255,255,255,0.3);
-    border-top-color: white;
-    border-radius: 50%;
-    animation: spin 0.6s linear infinite;
-    display: none;
+    width: 15px; height: 15px; border: 2px solid rgba(0,0,0,.2);
+    border-top-color: var(--accent-ink); border-radius: 50%;
+    animation: spin .6s linear infinite; display: none;
   }
   .btn-primary.loading .spinner { display: inline-block; }
   @keyframes spin { to { transform: rotate(360deg); } }
+
   .status {
-    margin-top: 12px;
-    padding: 10px 14px;
-    border-radius: 6px;
-    font-size: 13px;
-    display: none;
+    padding: 11px 14px; border-radius: 9px; font-size: 13px; display: none;
+    border: 1px solid transparent;
   }
-  .status.success {
-    background: #E8F5E9;
-    color: var(--success);
-    border: 1px solid #A5D6A7;
-    display: block;
-  }
-  .status.error {
-    background: #FFEBEE;
-    color: var(--danger);
-    border: 1px solid #EF9A9A;
-    display: block;
-  }
-  .monitor-select {
-    min-height: 140px;
-  }
-  select[multiple] {
-    padding: 4px;
-  }
-  select[multiple] option {
-    padding: 6px 8px;
-    border-radius: 4px;
-  }
+  .status.success { background: color-mix(in srgb, var(--good) 14%, var(--card)); color: var(--good); border-color: color-mix(in srgb, var(--good) 35%, transparent); display: block; }
+  .status.error { background: color-mix(in srgb, var(--critical) 12%, var(--card)); color: var(--critical); border-color: color-mix(in srgb, var(--critical) 35%, transparent); display: block; }
 </style>
 </head>
 <body>
-<div class="container">
-  <header>
-    <h1>Uptime Kuma Rapor</h1>
-    <p>Kaynak: <code>{{ db_path }}</code> · {{ total_monitors }} monitor</p>
+<div class="shell">
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
+          <path d="M3 15.5 L11 5 L14.4 5 L8 15.5 Z" fill="currentColor"/>
+          <path d="M10 15.5 L18 5 L21.4 5 L15 15.5 Z" fill="currentColor" opacity=".55"/>
+        </svg>
+      </span>
+      <div class="brand-text">
+        <span class="brand-eyebrow">Pegasus</span>
+        <span class="brand-title">Uptime Rapor Konsolu</span>
+      </div>
+    </div>
+    <div class="source-pill">
+      <span class="dot" aria-hidden="true"></span>
+      <span>Kaynak</span>
+      <code>{{ db_path }}</code>
+      <span>·</span>
+      <strong>{{ total_monitors }}</strong>
+      <span>monitor</span>
+    </div>
   </header>
 
-  <form id="report-form">
-    <div class="card">
-      <div class="card-label">Filtre</div>
-      <div class="filter-tabs" role="tablist">
-        <button type="button" data-tab="page" class="active">Status Page</button>
-        <button type="button" data-tab="tag">Tag</button>
-        <button type="button" data-tab="parent">Parent</button>
-        <button type="button" data-tab="ids">Belirli</button>
-        <button type="button" data-tab="all">Tumu</button>
+  <form id="report-form" class="console">
+    <section class="rail" aria-label="Filtreler">
+      <div class="panel">
+        <h2 class="panel-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+          Kapsam
+        </h2>
+        <div class="segmented" role="tablist">
+          <button type="button" data-tab="page" class="active" role="tab" aria-selected="true">Sayfa</button>
+          <button type="button" data-tab="tag" role="tab" aria-selected="false">Tag</button>
+          <button type="button" data-tab="parent" role="tab" aria-selected="false">Parent</button>
+          <button type="button" data-tab="ids" role="tab" aria-selected="false">Belirli</button>
+          <button type="button" data-tab="all" role="tab" aria-selected="false">Tumu</button>
+        </div>
+
+        <div class="filter-input active" data-panel="page">
+          <label for="status_page">Status page</label>
+          <select name="status_page" id="status_page">
+            {% for p in pages %}
+            <option value="{{ p.slug }}">{{ p.title }} ({{ p.monitor_count }} monitor)</option>
+            {% endfor %}
+            {% if not pages %}
+            <option value="" disabled>Hic status page yok</option>
+            {% endif %}
+          </select>
+        </div>
+
+        <div class="filter-input" data-panel="tag">
+          <label for="tag">Tag</label>
+          <select name="tag" id="tag">
+            {% for t in tags %}
+            <option value="{{ t.key }}">{{ t.display }} ({{ t.count }} monitor)</option>
+            {% endfor %}
+            {% if not tags %}
+            <option value="" disabled>Hic tag yok</option>
+            {% endif %}
+          </select>
+        </div>
+
+        <div class="filter-input" data-panel="parent">
+          <label for="parent">Parent monitor</label>
+          <select name="parent" id="parent">
+            {% for m in parents %}
+            <option value="{{ m.id }}">{{ m.name }} ({{ m.child_count }} alt)</option>
+            {% endfor %}
+            {% if not parents %}
+            <option value="" disabled>Hic parent monitor yok</option>
+            {% endif %}
+          </select>
+          <div class="hint">Sadece "Group" tipi (alt monitoru olan) monitorlar.</div>
+        </div>
+
+        <div class="filter-input" data-panel="ids">
+          <label for="monitor_ids">Monitor sec (Ctrl/Cmd + tikla ile coklu secim)</label>
+          <select name="monitor_ids" id="monitor_ids" multiple class="monitor-select">
+            {% for m in all_monitors %}
+            <option value="{{ m.id }}">[{{ m.id }}] {{ m.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="filter-input" data-panel="all">
+          <div class="hint">Tum aktif monitorlar rapora dahil edilecek.</div>
+        </div>
       </div>
 
-      <div class="filter-input active" data-panel="page">
-        <label for="status_page">Status page</label>
-        <select name="status_page" id="status_page">
-          {% for p in pages %}
-          <option value="{{ p.slug }}">{{ p.title }} ({{ p.monitor_count }} monitor)</option>
-          {% endfor %}
-          {% if not pages %}
-          <option value="" disabled>Hic status page yok</option>
-          {% endif %}
-        </select>
+      <div class="panel">
+        <h2 class="panel-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M8 3v3.5M16 3v3.5"/></svg>
+          Tarih araligi
+        </h2>
+        <div class="date-row">
+          <div>
+            <label for="from">Baslangic</label>
+            <input type="date" id="from" name="from" required>
+          </div>
+          <div>
+            <label for="to">Bitis</label>
+            <input type="date" id="to" name="to" required>
+          </div>
+        </div>
+        <div class="presets">
+          <button type="button" data-days="7">Son 7 gun</button>
+          <button type="button" data-days="30">Son 30 gun</button>
+          <button type="button" data-days="90">Son 90 gun</button>
+          <button type="button" data-days="180">Son 6 ay</button>
+          <button type="button" data-days="365">Son 1 yil</button>
+        </div>
       </div>
 
-      <div class="filter-input" data-panel="tag">
-        <label for="tag">Tag</label>
-        <select name="tag" id="tag">
-          {% for t in tags %}
-          <option value="{{ t.key }}">{{ t.display }} ({{ t.count }} monitor)</option>
-          {% endfor %}
-          {% if not tags %}
-          <option value="" disabled>Hic tag yok</option>
-          {% endif %}
-        </select>
-      </div>
+      <div class="panel">
+        <h2 class="panel-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 7h9M4 12h16M4 17h9"/><circle cx="16" cy="7" r="1.8" fill="currentColor" stroke="none"/><circle cx="9" cy="17" r="1.8" fill="currentColor" stroke="none"/></svg>
+          Secenekler
+        </h2>
+        <label for="title">Rapor basligi <span class="label-hint">(bos birakirsan otomatik doldurulur)</span></label>
+        <input type="text" id="title" name="title" placeholder="Uptime Rapor" autocomplete="off" style="margin-bottom: 4px;">
 
-      <div class="filter-input" data-panel="parent">
-        <label for="parent">Parent monitor</label>
-        <select name="parent" id="parent">
-          {% for m in parents %}
-          <option value="{{ m.id }}">{{ m.name }} ({{ m.child_count }} alt)</option>
-          {% endfor %}
-          {% if not parents %}
-          <option value="" disabled>Hic parent monitor yok</option>
-          {% endif %}
-        </select>
-        <div class="hint">Sadece "Group" tipi (alt monitoru olan) monitorlar.</div>
+        <div class="switch-row">
+          <label class="switch">
+            <input type="checkbox" name="detailed" id="detailed">
+            <span class="switch-track" aria-hidden="true"></span>
+          </label>
+          <div class="switch-copy">
+            <div class="switch-title">Detayli rapor</div>
+            <div class="switch-desc">Her monitor icin ayri sayfa (yanit suresi grafigi, gunluk uptime tablosu, down olaylari). Cok monitor varsa buyuk PDF uretir.</div>
+          </div>
+        </div>
+        <div class="switch-row">
+          <label class="switch">
+            <input type="checkbox" name="include_groups" id="include_groups">
+            <span class="switch-track" aria-hidden="true"></span>
+          </label>
+          <div class="switch-copy">
+            <div class="switch-title">Group tipi monitorlari da dahil et</div>
+            <div class="switch-desc">Varsayilan olarak alt monitoru olan monitorler cikarilir - dahil edilirse ayni DOWN olaylari iki kez sayilir.</div>
+          </div>
+        </div>
       </div>
+    </section>
 
-      <div class="filter-input" data-panel="ids">
-        <label for="monitor_ids">Monitor sec (Ctrl/Cmd + tikla ile coklu secim)</label>
-        <select name="monitor_ids" id="monitor_ids" multiple class="monitor-select">
-          {% for m in all_monitors %}
-          <option value="{{ m.id }}">[{{ m.id }}] {{ m.name }}</option>
-          {% endfor %}
-        </select>
-      </div>
-
-      <div class="filter-input" data-panel="all">
-        <div class="hint">Tum aktif monitorlar rapora dahil edilecek.</div>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-label">Tarih araligi</div>
-      <div class="date-row">
+    <section class="action" aria-label="Onizleme ve olustur">
+      <div class="panel stat-panel">
         <div>
-          <label for="from">Baslangic</label>
-          <input type="date" id="from" name="from" required>
+          <span class="stat-label">Rapora girecek</span>
+          <span class="stat-value" id="preview-count">–</span>
+          <span class="stat-unit">monitor</span>
         </div>
-        <div>
-          <label for="to">Bitis</label>
-          <input type="date" id="to" name="to" required>
-        </div>
+        <div class="stat-note" id="preview-note">Filtre secince guncellenir</div>
       </div>
-      <div class="presets">
-        <button type="button" data-days="7">Son 7 gun</button>
-        <button type="button" data-days="30">Son 30 gun</button>
-        <button type="button" data-days="90">Son 90 gun</button>
-        <button type="button" data-days="180">Son 6 ay</button>
-        <button type="button" data-days="365">Son 1 yil</button>
-      </div>
-    </div>
 
-    <div class="card">
-      <div class="card-label">Secenekler</div>
-      <label for="title">Rapor basligi <span style="color: var(--text-muted); font-weight: 400;">(bos birakirsan otomatik doldurulur)</span></label>
-      <input type="text" id="title" name="title" placeholder="Uptime Rapor" autocomplete="off" style="margin-bottom: 14px;">
-      <label class="toggle">
-        <input type="checkbox" name="detailed" id="detailed">
-        <div class="toggle-content">
-          <div class="toggle-title">Detayli rapor</div>
-          <div class="toggle-desc">Her monitor icin ayri sayfa (yanit suresi grafigi, gunluk uptime tablosu, down olaylari). Cok monitor varsa buyuk PDF uretir.</div>
-        </div>
-      </label>
-      <label class="toggle" style="margin-top: 10px;">
-        <input type="checkbox" name="include_groups" id="include_groups">
-        <div class="toggle-content">
-          <div class="toggle-title">Group tipi monitorlari da dahil et</div>
-          <div class="toggle-desc">Varsayilan olarak alt monitoru olan (Group tipi) monitorlar cikarilir. Cunku Uptime Kuma bunlara cocuklarindan turetilmis heartbeat kaydediyor - dahil edince ayni DOWN olaylari iki kez sayilir ve aggregate istatistikleri bozar.</div>
-        </div>
-      </label>
-    </div>
+      <button type="submit" class="btn-primary" id="submit-btn">
+        <span class="spinner" aria-hidden="true"></span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 11l5 5 5-5"/><path d="M4 18v1.5A1.5 1.5 0 0 0 5.5 21h13a1.5 1.5 0 0 0 1.5-1.5V18"/></svg>
+        <span class="btn-text">PDF olustur</span>
+      </button>
 
-    <div class="preview">
-      <div>
-        <div class="preview-label">Rapora girecek</div>
-        <div><span class="preview-num" id="preview-count">-</span> <span style="color: var(--text-muted); font-size: 14px;">monitor</span></div>
-      </div>
-      <div class="preview-right">
-        <div class="preview-note" id="preview-note">Filtre secince guncellenir</div>
-      </div>
-    </div>
-
-    <button type="submit" class="btn-primary" id="submit-btn">
-      <span class="spinner"></span>
-      <span class="btn-text">PDF olustur</span>
-    </button>
-
-    <div class="status" id="status"></div>
+      <div class="status" id="status" role="status"></div>
+    </section>
   </form>
 </div>
 
@@ -453,11 +489,15 @@ const btnText = submitBtn.querySelector('.btn-text');
 const statusEl = document.getElementById('status');
 
 // Sekme degistirme
-document.querySelectorAll('.filter-tabs button').forEach(btn => {
+document.querySelectorAll('.segmented button').forEach(btn => {
   btn.addEventListener('click', () => {
-    document.querySelectorAll('.filter-tabs button').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.segmented button').forEach(b => {
+      b.classList.remove('active');
+      b.setAttribute('aria-selected', 'false');
+    });
     document.querySelectorAll('.filter-input').forEach(p => p.classList.remove('active'));
     btn.classList.add('active');
+    btn.setAttribute('aria-selected', 'true');
     document.querySelector(`[data-panel="${btn.dataset.tab}"]`).classList.add('active');
     updateTitlePlaceholder();
     updatePreview();
@@ -487,7 +527,7 @@ document.querySelectorAll('.presets button').forEach(btn => {
 
 // Aktif filtre bilgisini topla
 function getFilterData() {
-  const activeTab = document.querySelector('.filter-tabs button.active').dataset.tab;
+  const activeTab = document.querySelector('.segmented button.active').dataset.tab;
   const data = {
     filter_type: activeTab,
     include_groups: document.getElementById('include_groups').checked,
@@ -504,7 +544,7 @@ function getFilterData() {
 
 // Baslik placeholder'ini secime gore guncelle
 function updateTitlePlaceholder() {
-  const tab = document.querySelector('.filter-tabs button.active').dataset.tab;
+  const tab = document.querySelector('.segmented button.active').dataset.tab;
   let suggested = 'Uptime Rapor';
   const stripCount = t => t.replace(/\s*\(\d+[^)]*\)\s*$/, '').trim();
 
@@ -530,6 +570,7 @@ function updateTitlePlaceholder() {
 async function updatePreview() {
   previewCount.textContent = '...';
   previewNote.textContent = 'Hesaplaniyor';
+  previewNote.classList.remove('is-empty');
   try {
     const r = await fetch('/api/count', {
       method: 'POST',
@@ -541,15 +582,15 @@ async function updatePreview() {
     const detailed = document.getElementById('detailed').checked;
     if (d.count === 0) {
       previewNote.textContent = 'Filtreye uyan monitor yok';
-      previewNote.style.color = 'var(--danger)';
+      previewNote.classList.add('is-empty');
     } else {
       const pages = detailed ? `~${d.count * 3} sayfa PDF` : '1 sayfalik ozet';
       previewNote.textContent = pages;
-      previewNote.style.color = 'var(--text-muted)';
     }
   } catch (e) {
     previewCount.textContent = '-';
     previewNote.textContent = 'Hata';
+    previewNote.classList.add('is-empty');
   }
 }
 
