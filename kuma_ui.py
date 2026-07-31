@@ -20,6 +20,7 @@ backup kopyasi gerekmeden canli veriyi kullanmak icin):
 Sonra tarayicidan: http://localhost:5000
 """
 import argparse
+import base64
 import io
 import os
 import sys
@@ -43,6 +44,18 @@ API_URL = None
 API_KEY = None
 LETTERHEAD_PATH = None
 MARGINS = {'top': 1.5, 'bottom': 1.5, 'left': 1.5, 'right': 1.5}
+
+_LOGO_PATH = Path(__file__).with_name('Pegasus_Logo.avif')
+_logo_data_uri_cache = None
+
+
+def get_logo_data_uri():
+    """Pegasus logosunu data URI olarak dondurur (ilk cagrida okuyup onbelleğe alir)."""
+    global _logo_data_uri_cache
+    if _logo_data_uri_cache is None and _LOGO_PATH.exists():
+        encoded = base64.b64encode(_LOGO_PATH.read_bytes()).decode('ascii')
+        _logo_data_uri_cache = f'data:image/avif;base64,{encoded}'
+    return _logo_data_uri_cache
 
 
 def get_backend():
@@ -143,17 +156,14 @@ HTML = r"""<!DOCTYPE html>
     display: flex; align-items: center; justify-content: space-between;
     gap: 16px; flex-wrap: wrap; margin-bottom: 28px;
   }
-  .brand { display: flex; align-items: center; gap: 12px; }
-  .brand-mark {
-    width: 38px; height: 38px; flex: none; border-radius: 10px;
-    background: #1B1D22; color: var(--accent);
-    display: flex; align-items: center; justify-content: center;
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .brand-logo-chip {
+    flex: none; background: #FFFFFF; border: 1px solid var(--border);
+    border-radius: 10px; padding: 6px 10px; box-shadow: var(--shadow);
+    display: flex; align-items: center;
   }
+  .brand-logo-chip img { display: block; height: 36px; width: auto; }
   .brand-text { display: flex; flex-direction: column; line-height: 1.25; }
-  .brand-eyebrow {
-    font-family: var(--font-body); font-size: 11px; font-weight: 600;
-    letter-spacing: .12em; text-transform: uppercase; color: var(--text-muted);
-  }
   .brand-title {
     font-family: var(--font-display); font-size: 19px; font-weight: 700;
     letter-spacing: -0.01em; text-wrap: balance;
@@ -319,14 +329,12 @@ HTML = r"""<!DOCTYPE html>
 <div class="shell">
   <header class="topbar">
     <div class="brand">
-      <span class="brand-mark" aria-hidden="true">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
-          <path d="M3 15.5 L11 5 L14.4 5 L8 15.5 Z" fill="currentColor"/>
-          <path d="M10 15.5 L18 5 L21.4 5 L15 15.5 Z" fill="currentColor" opacity=".55"/>
-        </svg>
+      {% if logo_data_uri %}
+      <span class="brand-logo-chip">
+        <img src="{{ logo_data_uri }}" alt="Pegasus">
       </span>
+      {% endif %}
       <div class="brand-text">
-        <span class="brand-eyebrow">Pegasus</span>
         <span class="brand-title">Uptime Rapor Konsolu</span>
       </div>
     </div>
@@ -725,6 +733,7 @@ def index():
         parents=parents,
         all_monitors=all_monitors,
         has_letterhead=bool(LETTERHEAD_PATH),
+        logo_data_uri=get_logo_data_uri(),
     )
 
 
