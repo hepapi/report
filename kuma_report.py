@@ -83,6 +83,35 @@ def uptime_color(pct):
     return '#C62828'
 
 
+def _combine_summaries(bulk):
+    """get_summaries_bulk() sonucundan grup ozetini (COUNT/SUM/AVG/MIN/MAX)
+    Python tarafinda hesaplar - backend.get_group_summary() gibi heartbeat
+    tablosunu ikinci kez taramaya gerek kalmaz.
+
+    Ortalama ping, her monitorun kendi UP sayisiyla agirliklandirilarak
+    birlestirilir (duz ortalamalarin ortalamasi degil - matematiksel
+    olarak SQL'deki AVG(ping WHERE status=1) ile birebir ayni sonucu verir).
+    """
+    total = up_c = down_c = 0
+    min_p = max_p = None
+    weighted_ping_sum = 0.0
+    ping_weight = 0
+    for s in bulk.values():
+        t, u, d, avg, mn, mx = s
+        total += t or 0
+        up_c += u or 0
+        down_c += d or 0
+        if mn is not None:
+            min_p = mn if min_p is None else min(min_p, mn)
+        if mx is not None:
+            max_p = mx if max_p is None else max(max_p, mx)
+        if avg is not None and u:
+            weighted_ping_sum += avg * u
+            ping_weight += u
+    avg_p = (weighted_ping_sum / ping_weight) if ping_weight else None
+    return total, up_c, down_c, avg_p, min_p, max_p
+
+
 def summary_table(data, uptime_pct=None):
     t = Table(data, colWidths=[6 * cm, 6 * cm])
     style = [
@@ -209,12 +238,21 @@ def build_report(backend, monitors, date_from, date_to, output_path,
     story.append(P(f'<b>Monitor sayisi:</b> {len(monitors)}'))
     story.append(Spacer(1, 0.4 * cm))
 
+    # Her monitor icin ayri ayri get_summary() cagirmak yerine (uzak backend'de
+    # N ayri HTTP round-trip demek - cok monitorlu raporlarda timeout'a yol
+    # aciyordu) TEK toplu sorguyla hepsini birden cekiyoruz.
+    empty_summary = (0, 0, 0, None, None, None)
+    bulk = backend.get_summaries_bulk([m[0] for m in monitors], date_from, date_to)
+
     # --- Grup ozeti (her zaman goster, birden fazla monitor varsa) ---
     if len(monitors) > 1:
         story.append(P('Genel Ozet (Tum Monitorlar Birlesik)', h2))
-        ids = [m[0] for m in monitors]
-        total, up_c, down_c, avg_p, min_p, max_p = backend.get_group_summary(
-            ids, date_from, date_to)
+        # ONEMLI: backend.get_group_summary() ile AYRI bir sorgu daha atmak
+        # yerine (heartbeat tablosunu ikinci kez tarayip, cok monitorlu
+        # raporlarda kendi basina timeout'a sebep oluyordu) yukarida zaten
+        # cekilmis olan per-monitor 'bulk' verisini Python tarafinda
+        # toplayarak ayni sonucu uretiyoruz - ekstra DB sorgusu yok.
+        total, up_c, down_c, avg_p, min_p, max_p = _combine_summaries(bulk)
         if total:
             pct = (up_c / total * 100)
             story.append(summary_table([
@@ -232,11 +270,6 @@ def build_report(backend, monitors, date_from, date_to, output_path,
     # --- Monitor listesi (zenginlestirilmis: uptime + down + avg ping) ---
     story.append(P('Monitor Listesi', h3))
     toc_data = [['#', 'Monitor', 'ID', 'Uptime %', 'Toplam', 'DOWN', 'Ort. Ping']]
-    # Her monitor icin ayri ayri get_summary() cagirmak yerine (uzak backend'de
-    # N ayri HTTP round-trip demek - cok monitorlu raporlarda timeout'a yol
-    # aciyordu) TEK toplu sorguyla hepsini birden cekiyoruz.
-    empty_summary = (0, 0, 0, None, None, None)
-    bulk = backend.get_summaries_bulk([m[0] for m in monitors], date_from, date_to)
     per_monitor = {}
     for i, (mid, mname) in enumerate(monitors, 1):
         s = bulk.get(mid, empty_summary)
