@@ -18,22 +18,35 @@ backup kopyasi gerekmeden canli veriyi kullanmak icin):
   python kuma_ui.py --api-url http://uptime-host:8090 --api-key secret
 
 Sonra tarayicidan: http://localhost:5000
+
+Giris (login) kullanicilarini yonetmek icin:
+  python3 kuma_auth.py add <kullanici_adi>       # ekle / sifresini guncelle
+  python3 kuma_auth.py remove <kullanici_adi>    # sil
+  python3 kuma_auth.py list                      # listele
+(--users-file ile farkli bir dosya belirttiyseniz kuma_auth.py'a da
+ --users-file ile ayni yolu verin.)
 """
 import argparse
 import base64
 import io
 import os
+import secrets
 import sys
+from functools import wraps
 from pathlib import Path
 
-from flask import Flask, jsonify, render_template_string, request, send_file
+from flask import (
+    Flask, jsonify, redirect, render_template_string, request, send_file,
+    session, url_for,
+)
 
 # kuma_report modulunden fonksiyonlari kullan
 try:
     from kuma_report import build_report
     from kuma_dbaccess import make_backend
+    from kuma_auth import load_users, verify as verify_user
 except ImportError:
-    print("✗ Hata: kuma_report.py / kuma_dbaccess.py bu klasorde bulunamadi.")
+    print("✗ Hata: kuma_report.py / kuma_dbaccess.py / kuma_auth.py bu klasorde bulunamadi.")
     print("  UI'yi kuma_report.py ile ayni klasorden calistir.")
     sys.exit(1)
 
@@ -42,8 +55,10 @@ app = Flask(__name__)
 DB_PATH = None
 API_URL = None
 API_KEY = None
+API_TIMEOUT = 300
 LETTERHEAD_PATH = None
 MARGINS = {'top': 1.5, 'bottom': 1.5, 'left': 1.5, 'right': 1.5}
+USERS_FILE = 'users.json'
 
 _LOGO_PATH = Path(__file__).with_name('Pegasus_Logo.avif')
 _logo_data_uri_cache = None
@@ -60,7 +75,122 @@ def get_logo_data_uri():
 
 def get_backend():
     """Her istek icin taze bir backend olusturur (thread-safety icin)."""
-    return make_backend(db_path=DB_PATH, api_url=API_URL, api_key=API_KEY)
+    return make_backend(db_path=DB_PATH, api_url=API_URL, api_key=API_KEY,
+                         api_timeout=API_TIMEOUT)
+
+
+def login_required(fn):
+    """Oturum acilmamissa /login'e yonlendirir (API route'lari icin 401 doner)."""
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if not session.get('user'):
+            if request.path.startswith('/api/') or request.path == '/generate':
+                return jsonify({'error': 'Oturum acilmamis'}), 401
+            return redirect(url_for('login', next=request.path))
+        return fn(*args, **kwargs)
+    return wrapper
+
+
+LOGIN_HTML = r"""<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pegasus · Giris</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #FBF9F4; --card: #FFFFFF; --border: #E7E0CE; --border-strong: #D6CCB0;
+    --text: #1B1D22; --text-muted: #6B6E76;
+    --accent: #FFC933; --accent-hover: #F0B900; --accent-ink: #2E2400;
+    --critical: #D8402B;
+    --shadow: 0 1px 2px rgba(20,16,4,.05), 0 6px 20px -4px rgba(20,16,4,.10);
+    --focus-ring: 0 0 0 3px rgba(255,201,51,.45);
+    --font-display: 'Sora', ui-sans-serif, system-ui, sans-serif;
+    --font-body: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161B; --card: #20232B; --border: #2B2F38; --border-strong: #3A3F4A;
+      --text: #F1F0EA; --text-muted: #9BA0AA; --critical: #FF6B5E;
+      --shadow: 0 1px 2px rgba(0,0,0,.35), 0 10px 28px -8px rgba(0,0,0,.55);
+      --focus-ring: 0 0 0 3px rgba(255,201,51,.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #14161B; --card: #20232B; --border: #2B2F38; --border-strong: #3A3F4A;
+    --text: #F1F0EA; --text-muted: #9BA0AA; --critical: #FF6B5E;
+    --shadow: 0 1px 2px rgba(0,0,0,.35), 0 10px 28px -8px rgba(0,0,0,.55);
+    --focus-ring: 0 0 0 3px rgba(255,201,51,.35);
+  }
+  :root[data-theme="light"] {
+    --bg: #FBF9F4; --card: #FFFFFF; --border: #E7E0CE; --border-strong: #D6CCB0;
+    --text: #1B1D22; --text-muted: #6B6E76; --critical: #D8402B;
+    --shadow: 0 1px 2px rgba(20,16,4,.05), 0 6px 20px -4px rgba(20,16,4,.10);
+    --focus-ring: 0 0 0 3px rgba(255,201,51,.45);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    font-family: var(--font-body); background: var(--bg); color: var(--text);
+    -webkit-font-smoothing: antialiased;
+  }
+  .card {
+    width: 100%; max-width: 340px; background: var(--card); border: 1px solid var(--border);
+    border-radius: 14px; padding: 32px 28px; box-shadow: var(--shadow); margin: 20px;
+  }
+  .logo-row { display: flex; justify-content: center; margin-bottom: 18px; }
+  .logo-chip {
+    background: #FFFFFF; border: 1px solid var(--border); border-radius: 10px;
+    padding: 8px 12px; box-shadow: var(--shadow); display: inline-flex; align-items: center;
+  }
+  .logo-chip img { display: block; height: 40px; width: auto; }
+  h1 {
+    font-family: var(--font-display); font-size: 18px; font-weight: 700; text-align: center;
+    margin: 0 0 24px; letter-spacing: -0.01em; text-wrap: balance;
+  }
+  label { display: block; font-size: 12.5px; font-weight: 500; margin-bottom: 6px; }
+  input[type="text"], input[type="password"] {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: 8px;
+    font-size: 14px; font-family: var(--font-body); background: var(--bg); color: var(--text);
+    margin-bottom: 14px; transition: border-color .15s, box-shadow .15s;
+  }
+  input:focus-visible { outline: none; border-color: var(--accent-hover); box-shadow: var(--focus-ring); }
+  .btn-primary {
+    width: 100%; background: var(--accent); color: var(--accent-ink); border: none;
+    padding: 12px; font-size: 14.5px; font-weight: 600; border-radius: 10px; cursor: pointer;
+    font-family: var(--font-body); transition: background .15s;
+  }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-primary:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+  .error {
+    background: color-mix(in srgb, var(--critical) 12%, var(--card)); color: var(--critical);
+    border: 1px solid color-mix(in srgb, var(--critical) 35%, transparent);
+    padding: 10px 14px; border-radius: 9px; font-size: 13px; margin-bottom: 16px;
+  }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo-row">
+    {% if logo_data_uri %}
+    <span class="logo-chip"><img src="{{ logo_data_uri }}" alt="Pegasus"></span>
+    {% endif %}
+  </div>
+  <h1>Uptime Rapor Konsolu</h1>
+  {% if error %}<div class="error">{{ error }}</div>{% endif %}
+  <form method="post">
+    <label for="username">Kullanici adi</label>
+    <input type="text" id="username" name="username" autocomplete="username" required autofocus>
+    <label for="password">Sifre</label>
+    <input type="password" id="password" name="password" autocomplete="current-password" required>
+    <button type="submit" class="btn-primary">Giris yap</button>
+  </form>
+</div>
+</body>
+</html>"""
 
 
 HTML = r"""<!DOCTYPE html>
@@ -184,6 +314,22 @@ HTML = r"""<!DOCTYPE html>
     max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .source-pill strong { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  .topbar-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .user-pill {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 999px; padding: 7px 8px 7px 14px; box-shadow: var(--shadow);
+    font-size: 12.5px; color: var(--text-muted);
+  }
+  .user-pill form { margin: 0; }
+  .logout-btn {
+    background: var(--panel); border: 1px solid var(--border); color: var(--text-muted);
+    border-radius: 999px; padding: 5px 12px; font-size: 12px; font-family: var(--font-body);
+    cursor: pointer; transition: border-color .15s, color .15s;
+  }
+  .logout-btn:hover { color: var(--text); border-color: var(--border-strong); }
+  .logout-btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 
   /* ---- console layout: rail + action pane ---- */
   .console { display: grid; grid-template-columns: 340px 1fr; gap: 20px; align-items: start; }
@@ -338,13 +484,21 @@ HTML = r"""<!DOCTYPE html>
         <span class="brand-title">Uptime Rapor Konsolu</span>
       </div>
     </div>
-    <div class="source-pill">
-      <span class="dot" aria-hidden="true"></span>
-      <span>Kaynak</span>
-      <code>{{ db_path }}</code>
-      <span>·</span>
-      <strong>{{ total_monitors }}</strong>
-      <span>monitor</span>
+    <div class="topbar-right">
+      <div class="source-pill">
+        <span class="dot" aria-hidden="true"></span>
+        <span>Kaynak</span>
+        <code>{{ db_path }}</code>
+        <span>·</span>
+        <strong>{{ total_monitors }}</strong>
+        <span>monitor</span>
+      </div>
+      <div class="user-pill">
+        <span>{{ current_user }}</span>
+        <form method="post" action="{{ url_for('logout') }}">
+          <button type="submit" class="logout-btn">Cikis</button>
+        </form>
+      </div>
     </div>
   </header>
 
@@ -692,7 +846,35 @@ form.addEventListener('submit', async (e) => {
 
 # ==================== FLASK ENDPOINTS ====================
 
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = (request.form.get('username') or '').strip()
+        password = request.form.get('password') or ''
+        # Her denemede dosyayi taze okuyoruz - sunucu yeniden baslatilmadan
+        # kullanici eklenip cikartilabilsin diye.
+        users = load_users(USERS_FILE)
+        if verify_user(users, username, password):
+            session.clear()
+            session['user'] = username
+            next_path = request.args.get('next') or url_for('index')
+            return redirect(next_path)
+        return render_template_string(
+            LOGIN_HTML, error='Kullanici adi veya sifre hatali.',
+            logo_data_uri=get_logo_data_uri(),
+        ), 401
+    return render_template_string(
+        LOGIN_HTML, error=None, logo_data_uri=get_logo_data_uri())
+
+
+@app.route('/logout', methods=['POST'])
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
+
 @app.route('/')
+@login_required
 def index():
     backend = get_backend()
 
@@ -734,6 +916,7 @@ def index():
         all_monitors=all_monitors,
         has_letterhead=bool(LETTERHEAD_PATH),
         logo_data_uri=get_logo_data_uri(),
+        current_user=session.get('user'),
     )
 
 
@@ -764,6 +947,7 @@ def _build_filters_from_json(data):
 
 
 @app.route('/api/count', methods=['POST'])
+@login_required
 def count():
     """Filtre icin monitor sayisini dondur (canli onizleme)."""
     data = request.get_json(silent=True) or {}
@@ -821,6 +1005,7 @@ def _slugify(text):
 
 
 @app.route('/generate', methods=['POST'])
+@login_required
 def generate():
     data = request.get_json(silent=True) or {}
     date_from = data.get('from')
@@ -883,6 +1068,12 @@ def main():
     p.add_argument('--api-key', default=os.environ.get('KUMA_API_KEY'),
                    help='--api-url ile kullanilacak API anahtari '
                         '(KUMA_API_KEY ortam degiskeni ile ayni)')
+    p.add_argument('--api-timeout', type=int,
+                   default=int(os.environ.get('KUMA_API_TIMEOUT', '300')),
+                   help='--api-url istekleri icin saniye cinsinden zaman asimi '
+                        '(varsayilan: 300, KUMA_API_TIMEOUT ile de ayarlanabilir). '
+                        'Cok monitorlu/genis tarih araligi raporlari zaman '
+                        'asimina uğrarsa buyutun.')
     p.add_argument('--host', default=os.environ.get('KUMA_UI_HOST', '127.0.0.1'),
                    help='Sadece localhost icin 127.0.0.1 (varsayilan), '
                         'tum arayuzlerden (LAN/internet) erisim icin 0.0.0.0')
@@ -900,6 +1091,16 @@ def main():
                    default=float(os.environ.get('KUMA_MARGIN_LEFT', '1.5')))
     p.add_argument('--margin-right', type=float,
                    default=float(os.environ.get('KUMA_MARGIN_RIGHT', '1.5')))
+    p.add_argument('--users-file', default=os.environ.get('KUMA_UI_USERS_FILE', 'users.json'),
+                   help='Giris yapabilecek kullanicilarin tutuldugu dosya '
+                        '(varsayilan: users.json). Kullanici eklemek/silmek icin: '
+                        'python3 kuma_auth.py add <kullanici_adi>')
+    p.add_argument('--secret-key', default=os.environ.get('KUMA_UI_SECRET_KEY'),
+                   help='Flask oturum (session) imzalama anahtari. Verilmezse '
+                        'her baslatmada rastgele uretilir (sunucu yeniden '
+                        'baslayinca herkes cikis yapmis olur) - production icin '
+                        'KUMA_UI_SECRET_KEY ile sabit bir deger verin '
+                        '(uretmek icin: openssl rand -hex 32).')
     args = p.parse_args()
 
     if not args.db and not args.api_url:
@@ -909,7 +1110,7 @@ def main():
         print(f'✗ Hata: antetli kagit dosyasi bulunamadi: {args.letterhead}')
         sys.exit(1)
 
-    global DB_PATH, API_URL, API_KEY, LETTERHEAD_PATH, MARGINS
+    global DB_PATH, API_URL, API_KEY, API_TIMEOUT, LETTERHEAD_PATH, MARGINS, USERS_FILE
     if args.db:
         DB_PATH = str(Path(args.db).resolve())
         if not Path(DB_PATH).exists():
@@ -917,11 +1118,26 @@ def main():
             sys.exit(1)
     API_URL = args.api_url
     API_KEY = args.api_key
+    API_TIMEOUT = args.api_timeout
     LETTERHEAD_PATH = args.letterhead
     MARGINS = {
         'top': args.margin_top, 'bottom': args.margin_bottom,
         'left': args.margin_left, 'right': args.margin_right,
     }
+    USERS_FILE = args.users_file
+
+    app.secret_key = args.secret_key or secrets.token_hex(32)
+    if not args.secret_key:
+        print('⚠  KUMA_UI_SECRET_KEY / --secret-key verilmedi: rastgele bir '
+              'anahtar uretildi. Sunucu yeniden baslayinca (ornegin container '
+              'yeniden olusturuldugunda) herkesin oturumu dusecek.')
+
+    n_users = len(load_users(USERS_FILE))
+    if n_users == 0:
+        print(f"⚠  '{USERS_FILE}' icinde hic kullanici yok - kimse giris "
+              f"yapamaz. Eklemek icin: python3 kuma_auth.py add <kullanici_adi>")
+    else:
+        print(f'→ Kullanicilar: {USERS_FILE} ({n_users} kullanici)')
 
     print(f'→ Kaynak: {DB_PATH or API_URL}')
     if LETTERHEAD_PATH:

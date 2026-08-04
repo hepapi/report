@@ -4,3 +4,4 @@ kuma.db-shm
 kuma.db-wal
 __pycache__
 .claude
+users.json

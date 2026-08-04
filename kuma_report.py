@@ -232,9 +232,14 @@ def build_report(backend, monitors, date_from, date_to, output_path,
     # --- Monitor listesi (zenginlestirilmis: uptime + down + avg ping) ---
     story.append(P('Monitor Listesi', h3))
     toc_data = [['#', 'Monitor', 'ID', 'Uptime %', 'Toplam', 'DOWN', 'Ort. Ping']]
+    # Her monitor icin ayri ayri get_summary() cagirmak yerine (uzak backend'de
+    # N ayri HTTP round-trip demek - cok monitorlu raporlarda timeout'a yol
+    # aciyordu) TEK toplu sorguyla hepsini birden cekiyoruz.
+    empty_summary = (0, 0, 0, None, None, None)
+    bulk = backend.get_summaries_bulk([m[0] for m in monitors], date_from, date_to)
     per_monitor = {}
     for i, (mid, mname) in enumerate(monitors, 1):
-        s = backend.get_summary(mid, date_from, date_to)
+        s = bulk.get(mid, empty_summary)
         per_monitor[mid] = s
         total = s[0] or 0
         up_c = s[1] or 0
@@ -388,6 +393,10 @@ def parse_args():
                         '(--db yerine; uzak sunucudaki canli DB\'ye HTTP ile baglanir)')
     p.add_argument('--api-key', help='--api-url ile kullanilacak API anahtari '
                                       '(KUMA_API_KEY ortam degiskeni ile ayni)')
+    p.add_argument('--api-timeout', type=int, default=300,
+                   help='--api-url istekleri icin saniye cinsinden zaman asimi '
+                        '(varsayilan: 300). Cok monitorlu/genis tarih araligi '
+                        'raporlari zaman asimina uğrarsa buyutun.')
     p.add_argument('--list', action='store_true')
     p.add_argument('--list-pages', action='store_true')
     p.add_argument('--list-tags', action='store_true')
@@ -434,7 +443,8 @@ def main():
         return
 
     api_key = args.api_key or os.environ.get('KUMA_API_KEY')
-    backend = make_backend(db_path=args.db, api_url=args.api_url, api_key=api_key)
+    backend = make_backend(db_path=args.db, api_url=args.api_url, api_key=api_key,
+                            api_timeout=args.api_timeout)
 
     if args.list:
         monitors = backend.list_monitors()

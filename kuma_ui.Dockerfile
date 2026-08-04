@@ -13,7 +13,7 @@ WORKDIR /srv
 COPY requirements-ui.txt .
 RUN pip install --no-cache-dir -r requirements-ui.txt
 
-COPY kuma_dbaccess.py kuma_report.py kuma_ui.py Pegasus_Logo.avif ./
+COPY kuma_dbaccess.py kuma_report.py kuma_ui.py kuma_auth.py Pegasus_Logo.avif ./
 
 ENV KUMA_UI_HOST=0.0.0.0
 ENV KUMA_UI_PORT=5000

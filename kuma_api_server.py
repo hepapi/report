@@ -111,6 +111,20 @@ def summary():
     return jsonify(get_backend().get_summary(monitor_id, date_from, date_to))
 
 
+@app.route('/summaries-bulk', methods=['POST'])
+@require_api_key
+def summaries_bulk():
+    data = request.get_json(silent=True) or {}
+    monitor_ids = data.get('monitor_ids') or []
+    date_from = data.get('from')
+    date_to = data.get('to')
+    if not date_from or not date_to:
+        return jsonify({'error': 'monitor_ids, from, to zorunlu'}), 400
+    result = get_backend().get_summaries_bulk(monitor_ids, date_from, date_to)
+    # JSON object anahtarlari string olmak zorunda (int monitor_id -> str)
+    return jsonify({str(mid): row for mid, row in result.items()})
+
+
 @app.route('/group-summary', methods=['POST'])
 @require_api_key
 def group_summary():
@@ -165,4 +179,6 @@ if __name__ == '__main__':
         print('UYARI: KUMA_API_KEY tanimli degil, API auth olmadan aciliyor!')
     print(f'-> DB: {DB_PATH}')
     port = int(os.environ.get('PORT', '8090'))
-    app.run(host='0.0.0.0', port=port)
+    # threaded=True: birden fazla istemci (veya bir istemcinin ust uste
+    # baglantilari) ayni anda bekletilmeden isleme alinsin diye.
+    app.run(host='0.0.0.0', port=port, threaded=True)

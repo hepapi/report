@@ -21,6 +21,8 @@ Her iki backend de su metodlari sunar:
   resolve_monitors(status_page=, tag=, parent=, monitor=, include_groups=)
       -> [(id, name), ...]
   get_summary(monitor_id, date_from, date_to) -> (total, up, down, avg, min, max)
+  get_summaries_bulk(monitor_ids, date_from, date_to)
+      -> {monitor_id: (total, up, down, avg, min, max), ...} (eksik id = veri yok)
   get_group_summary(monitor_ids, date_from, date_to) -> ayni sekil
   get_daily_stats(monitor_id, date_from, date_to) -> [(date, total, up, down, avg), ...]
   get_down_events(monitor_id, date_from, date_to) -> [(time, msg), ...]
@@ -222,6 +224,35 @@ def _get_group_summary(conn, monitor_ids, date_from, date_to):
     return cur.fetchone()
 
 
+def _get_summaries_bulk(conn, monitor_ids, date_from, date_to):
+    """Birden fazla monitor icin ozet istatistikleri TEK sorguda doner.
+
+    N monitor icin N ayri get_summary() cagrisi yerine (uzak backend'de
+    N ayri HTTP round-trip demek) tek GROUP BY sorgusuyla hepsini ceker.
+    Donen deger: {monitor_id: (total, up, down, avg, min, max), ...}.
+    Bu araliktaki hic heartbeat'i olmayan monitor'ler sozlukte YOK sayilir
+    (cagiran taraf eksik id'leri (0,0,0,None,None,None) olarak yorumlamali).
+    """
+    if not monitor_ids:
+        return {}
+    ph = ','.join('?' * len(monitor_ids))
+    cur = conn.cursor()
+    cur.execute(f"""
+        SELECT monitor_id,
+               COUNT(*),
+               SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END),
+               SUM(CASE WHEN status = 0 THEN 1 ELSE 0 END),
+               AVG(CASE WHEN status = 1 THEN ping END),
+               MIN(CASE WHEN status = 1 THEN ping END),
+               MAX(CASE WHEN status = 1 THEN ping END)
+        FROM heartbeat
+        WHERE monitor_id IN ({ph})
+          AND time >= ? AND time < datetime(?, '+1 day')
+        GROUP BY monitor_id
+    """, (*monitor_ids, date_from, date_to))
+    return {row[0]: row[1:] for row in cur.fetchall()}
+
+
 def _get_daily_stats(conn, monitor_id, date_from, date_to):
     cur = conn.cursor()
     cur.execute("""
@@ -314,6 +345,9 @@ class LocalBackend:
     def get_summary(self, monitor_id, date_from, date_to):
         return _get_summary(self.conn, monitor_id, date_from, date_to)
 
+    def get_summaries_bulk(self, monitor_ids, date_from, date_to):
+        return _get_summaries_bulk(self.conn, monitor_ids, date_from, date_to)
+
     def get_group_summary(self, monitor_ids, date_from, date_to):
         return _get_group_summary(self.conn, monitor_ids, date_from, date_to)
 
@@ -339,7 +373,7 @@ class RemoteBackendError(RuntimeError):
 class RemoteBackend:
     """kuma_api_server.py'a HTTP istegi atarak ayni veriyi ceker."""
 
-    def __init__(self, api_url, api_key=None, timeout=60):
+    def __init__(self, api_url, api_key=None, timeout=300):
         self.base_url = api_url.rstrip('/')
         self.api_key = api_key
         self.timeout = timeout
@@ -396,6 +430,13 @@ class RemoteBackend:
         })
         return tuple(row)
 
+    def get_summaries_bulk(self, monitor_ids, date_from, date_to):
+        result = self._request('POST', '/summaries-bulk', json_body={
+            'monitor_ids': list(monitor_ids), 'from': date_from, 'to': date_to,
+        })
+        # JSON object anahtarlari string'e cevrilir - int'e geri donduruyoruz.
+        return {int(mid): tuple(row) for mid, row in result.items()}
+
     def get_group_summary(self, monitor_ids, date_from, date_to):
         row = self._request('POST', '/group-summary', json_body={
             'monitor_ids': list(monitor_ids), 'from': date_from, 'to': date_to,
@@ -426,10 +467,13 @@ class RemoteBackend:
         pass  # HTTP client'ta acik kalan bir baglanti yok
 
 
-def make_backend(db_path=None, api_url=None, api_key=None):
+def make_backend(db_path=None, api_url=None, api_key=None, api_timeout=None):
     """CLI/UI argumanlarina gore uygun backend'i olusturur."""
     if api_url:
-        return RemoteBackend(api_url, api_key=api_key)
+        kwargs = {'api_key': api_key}
+        if api_timeout:
+            kwargs['timeout'] = api_timeout
+        return RemoteBackend(api_url, **kwargs)
     if db_path:
         return LocalBackend(db_path)
     raise ValueError('db_path veya api_url belirtilmeli')

@@ -11,28 +11,36 @@
 #   kuma-ui      -> tarayicidan PDF rapor almak icin web arayuzu, ayni
 #                   network uzerinden kuma-db-api'a baglanir, sunucunun
 #                   tum IP'lerinden (0.0.0.0) 5000 portunda erisilebilir.
-#
-# UYARI: kuma-ui'da giris/parola YOK. 5000 portuna ulasabilen herkes
-# uptime verilerinizden PDF rapor uretebilir. Sunucu guvenlik duvarinizda
-# 5000 portunu sadece guvendiginiz IP'lere / VPN'e acin, ya da onune
-# basic-auth yapan bir reverse proxy (nginx/caddy) koyun.
+#                   Artik giris ekrani var (bkz. asagi) - yetkisiz erisim
+#                   kullanici adi/sifre olmadan mumkun degil.
 #
 # Kurulum (sunucuda, bu depodaki dosyalari kopyaladiktan sonra):
 #   scp kuma_api_server.py kuma_dbaccess.py kuma_report.py kuma_ui.py \
-#       kuma_api_server.Dockerfile kuma_ui.Dockerfile \
+#       kuma_auth.py kuma_api_server.Dockerfile kuma_ui.Dockerfile \
 #       requirements-api.txt requirements-ui.txt \
 #       docker-compose.kuma-api.yml pegasus.pdf Pegasus_Logo.avif \
 #       root@Uptime:~/report/
 #
+#   # users.json'i SADECE ILK KURULUMDA kopyalayin (bos {} ile baslar).
+#   # Sonraki deploy'larda BUNU TEKRAR KOPYALAMAYIN - sunucuda eklenen
+#   # kullanicilari sifirlar. (Zaten varsa scp atlanir.)
+#   scp users.json root@Uptime:~/report/   # SADECE ILK SEFER
+#
 #   ssh root@Uptime
 #   cd ~/report
-#   # KUMA_API_KEY'i asagida guclu, rastgele bir degerle degistirin
-#   # (uretmek icin: openssl rand -hex 32)
+#   # KUMA_API_KEY ve KUMA_UI_SECRET_KEY'i asagida guclu, rastgele
+#   # degerlerle degistirin (uretmek icin: openssl rand -hex 32)
 #   docker compose -f docker-compose.kuma-api.yml up -d --build
+#
+#   # Ilk kullaniciyi ekleyin (TTY gerekiyor, -it sart):
+#   docker compose exec -it kuma-ui python3 kuma_auth.py add berat
+#   # Baska biri: docker compose exec -it kuma-ui python3 kuma_auth.py add ayse
+#   # Silmek: docker compose exec -it kuma-ui python3 kuma_auth.py remove ayse
+#   # Listelemek: docker compose exec kuma-ui python3 kuma_auth.py list
 #
 # Test:
 #   curl -s http://localhost:8090/health          # sunucu icinden, API
-#   http://<sunucu-ip>:5000                        # tarayicidan, UI
+#   http://<sunucu-ip>:5000                        # tarayicidan, UI (giris ister)
 
 version: "3.8"
 
@@ -72,12 +80,22 @@ services:
       # ustbilgi/altbilgi bandi yok) - varsayilan 1.5cm kenar bosluklari
       # yeterli, ayrica margin override gerekmiyor.
       KUMA_LETTERHEAD_PATH: /app/letterhead.pdf
+      # Cok monitorlu / genis tarih araligi raporlari hala zaman asimina
+      # ugrarsa (varsayilan 300 saniye) buyutun:
+      # KUMA_API_TIMEOUT: "600"
+      # Oturum (session) cookie'lerini imzalamak icin SABIT bir anahtar.
+      # Bunu mutlaka rastgele/gizli bir degerle degistirin - degistirmezseniz
+      # her container yeniden baslattiginizda herkesin oturumu duser.
+      KUMA_UI_SECRET_KEY: "CHANGE_ME_TO_A_LONG_RANDOM_SECRET"
     networks:
       - uptime_default
     ports:
       - "0.0.0.0:5000:5000"
     volumes:
       - ./pegasus.pdf:/app/letterhead.pdf:ro
+      # Kullanici hesaplari burada saklanir - container yeniden build
+      # edilse/silinse de kalici olmasi icin bind mount.
+      - ./users.json:/srv/users.json
 
 networks:
   uptime_default:
